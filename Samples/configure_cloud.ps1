@@ -120,6 +120,10 @@ if (-not $AppSecret) {
     $AppSecret = (Read-Host "Enter your Bot's Microsoft application secret from your bot registration portal.").Trim()
 }
 
+if (-not $AppSecret) {
+    $SpeechSubscription = (Read-Host "Enter your Speech-to-Text subscription key.").Trim()
+}
+
 function ReplaceInFile ($file, [string]$pattern, [string]$replaceWith) {
     $fileName = $file.Name
     Write-Output "  Replacing $pattern with $replaceWith in $fileName"

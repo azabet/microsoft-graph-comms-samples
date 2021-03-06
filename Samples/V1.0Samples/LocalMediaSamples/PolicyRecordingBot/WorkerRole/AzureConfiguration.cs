@@ -104,6 +104,11 @@ namespace Sample.PolicyRecordingBot.WorkerRole
         private const int DefaultPort = 9441;
 
         /// <summary>
+        /// The Microsoft app id key.
+        /// </summary>
+        private const string SpeechSubscriptionKey = "SpeechSubscription";
+
+        /// <summary>
         /// Graph logger.
         /// </summary>
         private IGraphLogger graphLogger;
@@ -143,6 +148,9 @@ namespace Sample.PolicyRecordingBot.WorkerRole
 
         /// <inheritdoc/>
         public string AadAppSecret { get; private set; }
+
+        /// <inheritdoc/>
+        public string SpeechSubscription { get; private set; }
 
         /// <summary>
         /// Initialize from serviceConfig.
@@ -192,6 +200,8 @@ namespace Sample.PolicyRecordingBot.WorkerRole
             {
                 throw new ConfigurationException("AadAppSecret", "Update app.config in WorkerRole with BotSecret from the bot registration portal");
             }
+
+            this.SpeechSubscription = ConfigurationManager.AppSettings[SpeechSubscriptionKey];
 
             List<Uri> controlListenUris = new List<Uri>();
             if (RoleEnvironment.IsEmulated)

@@ -72,7 +72,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 this.mediaSession.VbssSocket.VideoMediaReceived += this.OnVbssMediaReceived;
             }
 
-            this.TranscribeAsync();
+            this.StartTranscription();
         }
 
         /// <summary>
@@ -247,16 +247,17 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             e.Buffer.Dispose();
         }
 
-        /// <summary>
-        /// Continuous transcription of the audio.
-        /// </summary>
-        private async void TranscribeAsync()
+        /// <summary>Continuous transcription of the audio.</summary>
+        private void StartTranscription()
         {
             var audioConfig = AudioConfig.FromStreamInput(this.audioInputStream);
+            this.GraphLogger.Info($"audioConfig: {audioConfig}");
             string speechSubscription = Service.Instance.Configuration.SpeechSubscription;
             var speechConfig = SpeechConfig.FromSubscription(speechSubscription, "eastus");
+            this.GraphLogger.Info($"speechConfig: {speechConfig}");
             var recognizer = new SpeechRecognizer(speechConfig, audioConfig);
             var stopRecognition = new TaskCompletionSource<int>();
+
             recognizer.Recognizing += (s, e) =>
             {
                 this.GraphLogger.Info($"RECOGNIZING: Text={e.Result.Text}");
@@ -294,13 +295,10 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 recognizer.StopContinuousRecognitionAsync();
             };
 
-            await recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
-
-            // Waits for completion. Use Task.WaitAny to keep the task rooted.
-            Task.WaitAny(new[] { stopRecognition.Task });
-
-            // make the following call at some point to stop recognition.
-            // await recognizer.StopContinuousRecognitionAsync();
+            Task.Run(async () =>
+            {
+                await recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
+            });
         }
     }
 }
