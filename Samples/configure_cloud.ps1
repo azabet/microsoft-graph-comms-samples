@@ -30,13 +30,16 @@ Enter your Bot's Microsoft AppId as in the registation page.
 .PARAMETER AppSecret
 Enter your Bot's Microsoft AppPassword as in the registration page.
 
+.PARAMETER SpeechSubscription
+Enter your Speech-to-Text subscription key.
+
 .PARAMETER Reset
 If set to true, restores the configurations files with the backups.  If no backups exist, nothing will be done.
 
 .EXAMPLE
 Set the parameters:
 .\configure_cloud.ps1 -p .\AudioVideoPlaybackBot\
-.\configure_cloud.ps1 -p .\AudioVideoPlaybackBot\ -dns MeetingJoinBot.cloudapp.net -cn MeetingJoinBot.cloudapp.net -thumb ABC0000000000000000000000000000000000CBA -bid MeetingJoinBot -aid 51e3bc4a-c06e-469e-afaf-6c8caf8e5dd9 -as <secret>
+.\configure_cloud.ps1 -p .\AudioVideoPlaybackBot\ -dns MeetingJoinBot.cloudapp.net -cn MeetingJoinBot.cloudapp.net -thumb ABC0000000000000000000000000000000000CBA -bid MeetingJoinBot -aid 51e3bc4a-c06e-469e-afaf-6c8caf8e5dd9 -as <secret> -key <key>
 
 Restore the parameters
 .\configure_cloud.ps1 -p .\ -reset true
@@ -51,6 +54,7 @@ param(
     [parameter(Mandatory=$false,HelpMessage="Enter your Bot Display Name from your bot registration portal.")][alias("bid")] $BotName,
     [parameter(Mandatory=$false,HelpMessage="Enter your Bot's Microsoft application id from your bot registration portal.")][alias("aid")] $AppId,
     [parameter(Mandatory=$false,HelpMessage="Enter your Bot's Microsoft application secret from your bot registration portal.")][alias("as")] $AppSecret,
+    [parameter(Mandatory=$false,HelpMessage="Enter your Speech-to-Text subscription key.")][alias("key")] $SpeechSubscription,
     [switch] $Reset
 )
 
@@ -147,6 +151,7 @@ foreach($file in $FilesToReplace)
     ReplaceInFile $file "%BotNameLower%" $BotName.ToLower()
     ReplaceInFile $file "%AppId%" $AppId
     ReplaceInFile $file "%AppSecret%" $AppSecret
+    ReplaceInFile $file "%SpeechSubscription%" $SpeechSubscription
 }
 
 Write-Output "Update Complete."

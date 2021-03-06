@@ -68,5 +68,6 @@ namespace Sample.PolicyRecordingBot.FrontEnd
         /// Gets the Settings for the bot media platform.
         /// </summary>
         MediaPlatformSettings MediaPlatformSettings { get; }
+        string SpeechSubscription { get; }
     }
 }
