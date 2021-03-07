@@ -1,0 +1,17 @@
+{
+  "name": "node-app",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node app"
+  },
+  "description": "node-app",
+  "author": {
+    "name": ""
+  },
+  "dependencies": {
+    "@hapi/hapi": "^20.1.0",
+    "@hapi/inert": "^6.0.3",
+    "ws": "^7.4.4"
+  }
+}
