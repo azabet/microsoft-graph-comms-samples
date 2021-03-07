@@ -35,14 +35,14 @@ namespace SpeechTest
                         // Subscribes to events.
                         recognizer.Recognizing += (s, e) =>
                         {
-                            Console.WriteLine($"RECOGNIZING: Text={e.Result.Text}");
+                            Console.WriteLine($"RECOGNIZING: Text={e.Result.Text} {e} {e.Result}");
                         };
 
                         recognizer.Recognized += (s, e) =>
                         {
                             if (e.Result.Reason == ResultReason.RecognizedSpeech)
                             {
-                                Console.WriteLine($"RECOGNIZED: Text={e.Result.Text}");
+                                Console.WriteLine($"RECOGNIZED: Text={e.Result.Text} {e} {e.Result}");
                             }
                             else if (e.Result.Reason == ResultReason.NoMatch)
                             {

@@ -13,6 +13,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Net.Http;
     using System.Runtime.InteropServices;
     using System.Threading.Tasks;
     using Microsoft.CognitiveServices.Speech;
@@ -35,6 +36,8 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
 
         private readonly PushAudioInputStream audioInputStream = AudioInputStream.CreatePushStream();
 
+        private readonly HttpClient httpClient = new HttpClient();
+
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream"/> class.
         /// </summary>
@@ -46,6 +49,9 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         {
             ArgumentVerifier.ThrowOnNullArgument(mediaSession, nameof(mediaSession));
             ArgumentVerifier.ThrowOnNullArgument(logger, nameof(logger));
+
+            this.Publish("INFO", $"New session started {mediaSession.MediaSessionId}");
+            this.Publish("DEBUG", mediaSession.GetMediaConfiguration().ToString());
 
             this.mediaSession = mediaSession;
 
@@ -72,7 +78,14 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 this.mediaSession.VbssSocket.VideoMediaReceived += this.OnVbssMediaReceived;
             }
 
-            this.StartTranscription();
+            try
+            {
+                this.StartTranscriptionAsync(mediaSession.MediaSessionId).Wait();
+            }
+            catch (Exception ex)
+            {
+                this.Publish("ERROR", ex.ToString());
+            }
         }
 
         /// <summary>
@@ -188,24 +201,22 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// </param>
         private void OnAudioMediaReceived(object sender, AudioMediaReceivedEventArgs e)
         {
-            this.GraphLogger.Info($"Received Audio: [VideoMediaReceivedEventArgs(Data=<{e.Buffer.Data}>, Length={e.Buffer.Length}, Timestamp={e.Buffer.Timestamp})]");
+            this.Publish("DEBUG", $"Received audio {e.Buffer.AudioFormat}, Length={e.Buffer.Length}, IsSilence={e.Buffer.IsSilence}");
+            if (e.Buffer.IsSilence)
+            {
+                return;
+            }
 
             byte[] buffer = new byte[e.Buffer.Length];
             Marshal.Copy(e.Buffer.Data, buffer, 0, (int)e.Buffer.Length);
 
-            // If the recognize had completed with error/timeout, the underlying stream might have been swapped out on us and disposed.
-            // so ignore the objectDisposedException.
             try
             {
                 this.audioInputStream.Write(buffer);
             }
-            catch (ObjectDisposedException)
-            {
-                this.GraphLogger.Info("Write on recognitionStream threw ObjectDisposed");
-            }
             catch (Exception ex)
             {
-                this.GraphLogger.Error($"Caught an exception while processing the audio buffer {ex}");
+                this.Publish("ERROR", $"Caught an exception while processing the audio buffer {ex}");
             }
             finally
             {
@@ -225,6 +236,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private void OnVideoMediaReceived(object sender, VideoMediaReceivedEventArgs e)
         {
             this.GraphLogger.Info($"[{e.SocketId}]: Received Video: [VideoMediaReceivedEventArgs(Data=<{e.Buffer.Data}>, Length={e.Buffer.Length}, Timestamp={e.Buffer.Timestamp}, Width={e.Buffer.VideoFormat.Width}, Height={e.Buffer.VideoFormat.Height}, ColorFormat={e.Buffer.VideoFormat.VideoColorFormat}, FrameRate={e.Buffer.VideoFormat.FrameRate})]");
+            this.Publish("VIDEO", e.ToString());
 
             // TBD: Policy Recording bots can record the Video here
             e.Buffer.Dispose();
@@ -242,63 +254,81 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private void OnVbssMediaReceived(object sender, VideoMediaReceivedEventArgs e)
         {
             this.GraphLogger.Info($"[{e.SocketId}]: Received VBSS: [VideoMediaReceivedEventArgs(Data=<{e.Buffer.Data}>, Length={e.Buffer.Length}, Timestamp={e.Buffer.Timestamp}, Width={e.Buffer.VideoFormat.Width}, Height={e.Buffer.VideoFormat.Height}, ColorFormat={e.Buffer.VideoFormat.VideoColorFormat}, FrameRate={e.Buffer.VideoFormat.FrameRate})]");
+            this.Publish("VBSS", e.ToString());
 
             // TBD: Policy Recording bots can record the VBSS here
             e.Buffer.Dispose();
         }
 
         /// <summary>Continuous transcription of the audio.</summary>
-        private void StartTranscription()
+        /// <param name="callId">Call ID.</param>
+        /// <returns>Awaitable task.</returns>
+        private async Task StartTranscriptionAsync(Guid callId)
         {
-            var audioConfig = AudioConfig.FromStreamInput(this.audioInputStream);
-            this.GraphLogger.Info($"audioConfig: {audioConfig}");
-            string speechSubscription = Service.Instance.Configuration.SpeechSubscription;
-            var speechConfig = SpeechConfig.FromSubscription(speechSubscription, "eastus");
-            this.GraphLogger.Info($"speechConfig: {speechConfig}");
-            var recognizer = new SpeechRecognizer(speechConfig, audioConfig);
+            string key = Service.Instance.Configuration.SpeechSubscription;
+            var speechConfig = SpeechConfig.FromSubscription(key, "eastus");
+            this.Publish("DEBUG", $"Transcribing {callId}");
             var stopRecognition = new TaskCompletionSource<int>();
-
-            recognizer.Recognizing += (s, e) =>
+            using (var audioConfig = AudioConfig.FromStreamInput(this.audioInputStream))
             {
-                this.GraphLogger.Info($"RECOGNIZING: Text={e.Result.Text}");
-            };
-
-            recognizer.Recognized += (s, e) =>
-            {
-                if (e.Result.Reason == ResultReason.RecognizedSpeech)
+                using (var recognizer = new SpeechRecognizer(speechConfig, audioConfig))
                 {
-                    Console.WriteLine($"RECOGNIZED: Text={e.Result.Text}");
+                    recognizer.Recognizing += (s, e) =>
+                    {
+                        this.Publish("RECOGNIZING", e.Result.Text);
+                    };
+
+                    recognizer.Recognized += (s, e) =>
+                    {
+                        this.Publish("RECOGNIZED", e.Result.Text);
+                    };
+
+                    recognizer.Canceled += (s, e) =>
+                    {
+                        this.Publish("CANCELED", e.ToString());
+                        if (e.Reason == CancellationReason.Error)
+                        {
+                            stopRecognition.TrySetResult(0);
+                        }
+                    };
+
+                    recognizer.SessionStarted += (s, e) =>
+                    {
+                        this.Publish("DEBUG", $"started transcription session {e.SessionId} for call {callId}");
+                    };
+
+                    recognizer.SessionStopped += (s, e) =>
+                    {
+                        this.Publish("DEBUG", $"stopped transcription session {e.SessionId} for call {callId}");
+                        stopRecognition.TrySetResult(0);
+                    };
+
+                    this.Publish("DEBUG", $"StartContinuousRecognitionAsync for {callId}");
+                    await recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
+
+                    // Waits for completion.
+                    // Use Task.WaitAny to keep the task rooted.
+                    this.Publish("DEBUG", $"waiting for completion of {callId}");
+                    Task.WaitAny(new[] { stopRecognition.Task });
+
+                    // Stop transcribing the conversation.
+                    this.Publish("DEBUG", $"StopContinuousRecognitionAsync for {callId}");
+                    await recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
+
+                    this.Publish("DEBUG", $"Ended transcription of {callId}");
                 }
-                else if (e.Result.Reason == ResultReason.NoMatch)
-                {
-                    Console.WriteLine($"NOMATCH: Speech could not be recognized.");
-                }
-            };
+            }
+        }
 
-            recognizer.Canceled += (s, e) =>
-            {
-                this.GraphLogger.Info($"CANCELED: Reason={e.Reason}");
-                if (e.Reason == CancellationReason.Error)
-                {
-                    this.GraphLogger.Info($"CANCELED: ErrorCode={e.ErrorCode}");
-                    this.GraphLogger.Info($"CANCELED: ErrorDetails={e.ErrorDetails}");
-                }
-
-                stopRecognition.TrySetResult(0);
-                recognizer.StopContinuousRecognitionAsync();
-            };
-
-            recognizer.SessionStopped += (s, e) =>
-            {
-                this.GraphLogger.Info("\n    Session stopped event.");
-                stopRecognition.TrySetResult(0);
-                recognizer.StopContinuousRecognitionAsync();
-            };
-
-            Task.Run(async () =>
-            {
-                await recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
-            });
+        /// <summary>Publish a message.</summary>
+        /// <param name="key">The key.</param>
+        /// <param name="value">The value.</param>
+        private void Publish(string key, string value)
+        {
+            Console.WriteLine($"[{key}] {value}");
+            var values = new Dictionary<string, string> { { key, value } };
+            var content = new FormUrlEncodedContent(values);
+            this.httpClient.PostAsync("http://teams.featherinthecap.com/publish", content);
         }
     }
 }

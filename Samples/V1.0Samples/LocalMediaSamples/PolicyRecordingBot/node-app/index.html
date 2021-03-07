@@ -4,29 +4,65 @@
 <head>
     <meta charset="utf-8" />
     <title>Teams Transcription</title>
+    <style>
+        .container {
+            border: solid grey 1px;
+            border-radius: 5px;
+            width: 100%;
+            overflow: auto;
+            margin-bottom: 5px;
+        }
+    </style>
 </head>
 
 <body>
     <div>
-        Status:
-        <span id="status">disconnected</span>
+        Status: <span id="status">disconnected</span>
+        <button onclick="test()" style="display: non">test</button>
     </div>
 
-    <div id="container" style="width: 100%; height: 400px; border: solid grey 1px; border-radius: 5px; overflow: auto"></div>
+    Logs
+    <div id="logs" class="container" style="height: 200px"></div>
+    Messages
+    <div id="messages" class="container" style="height: 200px"></div>
+    Interim results
+    <div id="interim" class="container" style="height: 60px"></div>
 
     <script type="text/javascript">
 
+        const messages = document.getElementById("messages");
+        const interim = document.getElementById("interim");
         const container = document.getElementById("container");
         const status = document.getElementById("status");
+
+        function toggleInfo(e) {
+            const { checked } = e;
+            if (checked) {
+                container.classList.add('hideInfo');
+            } else {
+                container.classList.remove('hideInfo');
+            }
+        }
 
         function showStatus(x) {
             status.innerHTML = x;
         }
 
-        function showMessage(text) {
-            const e = document.createElement("div");
-            e.innerHTML = text;
-            container.appendChild(e);
+        function showMessage(k, v) {
+            const now = new Date().toLocaleString();
+            if (k === "RECOGNIZING") {
+                interim.innerHTML = `${now}: ${v}`;
+            } else if (k === "RECOGNIZED") {
+                const e = document.createElement("div");
+                e.className = k;
+                e.innerHTML = `${now}: ${v}`;
+                messages.appendChild(e);
+            } else {
+                const e = document.createElement("div");
+                e.className = k;
+                e.innerHTML = `${now}: [${k}] ${v}`;;
+                logs.appendChild(e);
+            }
         };
 
         function createWebSocket() {
@@ -36,9 +72,45 @@
             ws.onmessage = function (evt) {
                 console.log({ evt });
                 const { data } = evt;
-                (data !== 'welcome') && showMessage(data);
+                if (data === 'welcome') return;
+                try {
+                    const message = JSON.parse(data);
+                    Object.entries(message).forEach(([k, v]) => showMessage(k, v));
+                } catch (e) {
+                    console.error(e);
+                }
             };
         }
+
+        async function test() {
+            const wait = 200;
+            post({ "INFO": "new session started" });
+            await sleep(wait);
+            post({ "DEBUG": "received audio" });
+            await sleep(wait);
+            post({ "RECOGNIZING": "hello" });
+            await sleep(wait);
+            post({ "RECOGNIZING": "hello world" });
+            await sleep(wait);
+            post({ "RECOGNIZING": "hello world!" });
+            await sleep(wait);
+            post({ "RECOGNIZED": "hello world!" });
+            await sleep(wait);
+            post({ "RECOGNIZING": "good" });
+            await sleep(wait);
+            post({ "RECOGNIZING": "goodbye" });
+            await sleep(wait);
+            post({ "RECOGNIZED": "goodbye" });
+        }
+
+        function post(data) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/publish", true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify(data));
+        }
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
         createWebSocket();
     </script>

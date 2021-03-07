@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CRWorkerRole", "PolicyRecor
 EndProject
 Project("{CC5FD16D-436D-48AD-A40C-5A424C6E3E79}") = "PolicyRecordingBot", "PolicyRecordingBot\PolicyRecordingBot.ccproj", "{69051056-B313-432E-8CE3-D7164CD82DC9}"
 EndProject
+Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "node-app", "PolicyRecordingBot\node-app\node-app.njsproj", "{3B0ABC57-74FD-4922-AB1E-92E24FFC2859}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -40,6 +42,10 @@ Global
 		{69051056-B313-432E-8CE3-D7164CD82DC9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{69051056-B313-432E-8CE3-D7164CD82DC9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{69051056-B313-432E-8CE3-D7164CD82DC9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B0ABC57-74FD-4922-AB1E-92E24FFC2859}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B0ABC57-74FD-4922-AB1E-92E24FFC2859}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B0ABC57-74FD-4922-AB1E-92E24FFC2859}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B0ABC57-74FD-4922-AB1E-92E24FFC2859}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

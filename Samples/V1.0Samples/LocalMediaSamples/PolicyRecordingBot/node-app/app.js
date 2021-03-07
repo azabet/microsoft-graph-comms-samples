@@ -24,12 +24,9 @@ async function init() {
         handler: (request, h) => {
             const { payload } = request;
             console.log({ payload });
-            const data = []
-            Object.entries(payload).forEach(([k, v]) => data.push(`[${k}] ${v}`));
-            const message = data.join('\n');
             wss.clients.forEach(client => {
                 if (client.readyState === WebSocket.OPEN) {
-                    client.send(message);
+                    client.send(JSON.stringify(payload));
                 }
             });
             return 'OK'
