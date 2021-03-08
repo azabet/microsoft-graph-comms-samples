@@ -5,6 +5,10 @@
     <meta charset="utf-8" />
     <title>Teams Transcription</title>
     <style>
+        h4 {
+            margin-bottom: 5px;
+            margin-top: 10px;
+        }
         .container {
             border: solid grey 1px;
             border-radius: 5px;
@@ -12,35 +16,44 @@
             overflow: auto;
             margin-bottom: 5px;
         }
+        #logs.hideDebug > .DEBUG {
+            display: none;
+        }
     </style>
 </head>
 
 <body>
     <div>
         Status: <span id="status">disconnected</span>
-        <button onclick="test()" style="display: non">test</button>
+        <button onclick="test()" style="display: none">test</button>
     </div>
-
-    Logs
-    <div id="logs" class="container" style="height: 200px"></div>
-    Messages
+    <div>
+        <h4 style="display: inline-block">Logs</h4>
+        <label>level</label>
+        <select onchange="setLogLevel(this)">
+            <option value="INFO" selected>info</option>
+            <option value="DEBUG">debug</option>
+        </select>
+    </div>
+    <div id="logs" class="container hideDebug" style="height: 200px"></div>
+    <h4>Messages</h4>
     <div id="messages" class="container" style="height: 200px"></div>
-    Interim results
+    <h4>Interim results</h4>
     <div id="interim" class="container" style="height: 60px"></div>
 
     <script type="text/javascript">
 
+        const logs = document.getElementById("logs");
         const messages = document.getElementById("messages");
         const interim = document.getElementById("interim");
-        const container = document.getElementById("container");
         const status = document.getElementById("status");
 
-        function toggleInfo(e) {
-            const { checked } = e;
-            if (checked) {
-                container.classList.add('hideInfo');
+        function setLogLevel(e) {
+            const { value } = e;
+            if (value === 'DEBUG') {
+                logs.classList.remove('hideDebug');
             } else {
-                container.classList.remove('hideInfo');
+                logs.classList.add('hideDebug');
             }
         }
 

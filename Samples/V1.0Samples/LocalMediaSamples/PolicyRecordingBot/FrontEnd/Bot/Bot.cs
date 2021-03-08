@@ -18,6 +18,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
     using Microsoft.Graph.Communications.Common.Telemetry;
     using Microsoft.Graph.Communications.Resources;
     using Microsoft.Skype.Bots.Media;
+    using Newtonsoft.Json;
     using Sample.Common;
     using Sample.Common.Authentication;
     using Sample.Common.Logging;
@@ -61,6 +62,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             this.Logger = null;
             this.Client?.Dispose();
             this.Client = null;
+            Publisher.Publish("INFO", "Bot disposed");
         }
 
         /// <summary>
@@ -70,6 +72,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// <param name="logger">Graph logger.</param>
         internal void Initialize(Service service, IGraphLogger logger)
         {
+            Publisher.Publish("INFO", "Initializing the bot");
             Validator.IsNull(this.Logger, "Multiple initializations are not allowed.");
 
             this.Logger = logger;
@@ -95,6 +98,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             this.Client = builder.Build();
             this.Client.Calls().OnIncoming += this.CallsOnIncoming;
             this.Client.Calls().OnUpdated += this.CallsOnUpdated;
+            Publisher.Publish("INFO", "Bot initialized");
         }
 
         /// <summary>
@@ -108,6 +112,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// </returns>
         internal async Task EndCallByCallLegIdAsync(string callLegId)
         {
+            Publisher.Publish("INFO", $"{callLegId} requesting call to be ended");
             try
             {
                 await this.GetHandlerOrThrow(callLegId).Call.DeleteAsync().ConfigureAwait(false);
@@ -177,6 +182,9 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         {
             args.AddedResources.ForEach(call =>
             {
+                Publisher.Publish("INFO", $"{call.Id} incoming call");
+                Publisher.Publish("DEBUG", $"Bot.CallsOnIncoming.AddedResource {this.JsonifyCall(call)}");
+
                 // Get the policy recording parameters.
 
                 // The context associated with the incoming call.
@@ -228,12 +236,16 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         {
             foreach (var call in args.AddedResources)
             {
+                Publisher.Publish("INFO", $"{call.Id} adding call");
+                Publisher.Publish("DEBUG", $"Bot.CallsOnUpdated.AddedResource {this.JsonifyCall(call)}");
                 var callHandler = new CallHandler(call);
                 this.CallHandlers[call.Id] = callHandler;
             }
 
             foreach (var call in args.RemovedResources)
             {
+                Publisher.Publish("INFO", $"{call.Id} removing call");
+                Publisher.Publish("DEBUG", $"Bot.CallsOnUpdated.RemovedResource {this.JsonifyCall(call)}");
                 if (this.CallHandlers.TryRemove(call.Id, out CallHandler handler))
                 {
                     handler.Dispose();
@@ -261,6 +273,17 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             }
 
             return handler;
+        }
+
+        /// <summary>Jsonify the call object.</summary>
+        /// <param name="call">call object.</param>
+        /// <returns>string.</returns>
+        private string JsonifyCall(ICall call)
+        {
+            var resource = JsonConvert.SerializeObject(call.Resource);
+            var participants = JsonConvert.SerializeObject(call.Participants);
+            var mediaSession = JsonConvert.SerializeObject(call.MediaSession);
+            return $"Resource={resource}, Participants={participants}, MediaSession={mediaSession}";
         }
     }
 }

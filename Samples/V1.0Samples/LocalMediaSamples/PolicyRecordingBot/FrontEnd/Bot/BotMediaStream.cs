@@ -13,11 +13,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using System.Net.Http;
     using System.Runtime.InteropServices;
-    using System.Threading.Tasks;
-    using Microsoft.CognitiveServices.Speech;
-    using Microsoft.CognitiveServices.Speech.Audio;
     using Microsoft.Graph.Communications.Calls.Media;
     using Microsoft.Graph.Communications.Common;
     using Microsoft.Graph.Communications.Common.Telemetry;
@@ -33,27 +29,25 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private readonly IVideoSocket vbssSocket;
         private readonly List<IVideoSocket> videoSockets;
         private readonly ILocalMediaSession mediaSession;
-
-        private readonly PushAudioInputStream audioInputStream = AudioInputStream.CreatePushStream();
-
-        private readonly HttpClient httpClient = new HttpClient();
+        private Transcriber transcriber;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream"/> class.
         /// </summary>
         /// <param name="mediaSession">The media session.</param>
         /// <param name="logger">Graph logger.</param>
+        /// <param name="transcriber">Transcriber instance for this call.</param>
         /// <exception cref="InvalidOperationException">Throws when no audio socket is passed in.</exception>
-        public BotMediaStream(ILocalMediaSession mediaSession, IGraphLogger logger)
+        public BotMediaStream(ILocalMediaSession mediaSession, IGraphLogger logger, Transcriber transcriber)
             : base(logger)
         {
+            Publisher.Publish("INFO", $"{mediaSession.MediaSessionId} >>> initializing media stream bot");
+            Publisher.Publish("DEBUG", mediaSession.GetMediaConfiguration().ToString());
             ArgumentVerifier.ThrowOnNullArgument(mediaSession, nameof(mediaSession));
             ArgumentVerifier.ThrowOnNullArgument(logger, nameof(logger));
 
-            this.Publish("INFO", $"New session started {mediaSession.MediaSessionId}");
-            this.Publish("DEBUG", mediaSession.GetMediaConfiguration().ToString());
-
             this.mediaSession = mediaSession;
+            this.transcriber = transcriber;
 
             // Subscribe to the audio media.
             this.audioSocket = mediaSession.AudioSocket;
@@ -78,14 +72,8 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 this.mediaSession.VbssSocket.VideoMediaReceived += this.OnVbssMediaReceived;
             }
 
-            try
-            {
-                this.StartTranscriptionAsync(mediaSession.MediaSessionId).Wait();
-            }
-            catch (Exception ex)
-            {
-                this.Publish("ERROR", ex.ToString());
-            }
+            _ = transcriber.StartTranscriptionAsync();
+            Publisher.Publish("INFO", $"{mediaSession.MediaSessionId} <<< media stream bot initialized");
         }
 
         /// <summary>
@@ -162,6 +150,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// <inheritdoc/>
         protected override void Dispose(bool disposing)
         {
+            Publisher.Publish("INFO", $"{this.mediaSession.MediaSessionId} >>> disposing media stream bot");
             base.Dispose(disposing);
 
             this.audioSocket.AudioMediaReceived -= this.OnAudioMediaReceived;
@@ -176,6 +165,8 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             {
                 this.mediaSession.VbssSocket.VideoMediaReceived -= this.OnVbssMediaReceived;
             }
+
+            Publisher.Publish("INFO", $"{this.mediaSession.MediaSessionId} <<< media stream bot disposed");
         }
 
         /// <summary>
@@ -201,22 +192,16 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// </param>
         private void OnAudioMediaReceived(object sender, AudioMediaReceivedEventArgs e)
         {
-            this.Publish("DEBUG", $"Received audio {e.Buffer.AudioFormat}, Length={e.Buffer.Length}, IsSilence={e.Buffer.IsSilence}");
-            if (e.Buffer.IsSilence)
-            {
-                return;
-            }
-
-            byte[] buffer = new byte[e.Buffer.Length];
-            Marshal.Copy(e.Buffer.Data, buffer, 0, (int)e.Buffer.Length);
-
+            // Publisher.Publish("DEBUG", $"Received audio {e.Buffer.AudioFormat}, Length={e.Buffer.Length}, IsSilence={e.Buffer.IsSilence}");
             try
             {
-                this.audioInputStream.Write(buffer);
+                byte[] buffer = new byte[e.Buffer.Length];
+                Marshal.Copy(e.Buffer.Data, buffer, 0, (int)e.Buffer.Length);
+                this.transcriber.PushAudio(buffer);
             }
             catch (Exception ex)
             {
-                this.Publish("ERROR", $"Caught an exception while processing the audio buffer {ex}");
+                Publisher.Publish("ERROR", $"Caught an exception while processing the audio buffer {ex}");
             }
             finally
             {
@@ -236,7 +221,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private void OnVideoMediaReceived(object sender, VideoMediaReceivedEventArgs e)
         {
             this.GraphLogger.Info($"[{e.SocketId}]: Received Video: [VideoMediaReceivedEventArgs(Data=<{e.Buffer.Data}>, Length={e.Buffer.Length}, Timestamp={e.Buffer.Timestamp}, Width={e.Buffer.VideoFormat.Width}, Height={e.Buffer.VideoFormat.Height}, ColorFormat={e.Buffer.VideoFormat.VideoColorFormat}, FrameRate={e.Buffer.VideoFormat.FrameRate})]");
-            this.Publish("VIDEO", e.ToString());
+            Publisher.Publish("VIDEO", e.ToString());
 
             // TBD: Policy Recording bots can record the Video here
             e.Buffer.Dispose();
@@ -254,81 +239,10 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private void OnVbssMediaReceived(object sender, VideoMediaReceivedEventArgs e)
         {
             this.GraphLogger.Info($"[{e.SocketId}]: Received VBSS: [VideoMediaReceivedEventArgs(Data=<{e.Buffer.Data}>, Length={e.Buffer.Length}, Timestamp={e.Buffer.Timestamp}, Width={e.Buffer.VideoFormat.Width}, Height={e.Buffer.VideoFormat.Height}, ColorFormat={e.Buffer.VideoFormat.VideoColorFormat}, FrameRate={e.Buffer.VideoFormat.FrameRate})]");
-            this.Publish("VBSS", e.ToString());
+            Publisher.Publish("VBSS", e.ToString());
 
             // TBD: Policy Recording bots can record the VBSS here
             e.Buffer.Dispose();
-        }
-
-        /// <summary>Continuous transcription of the audio.</summary>
-        /// <param name="callId">Call ID.</param>
-        /// <returns>Awaitable task.</returns>
-        private async Task StartTranscriptionAsync(Guid callId)
-        {
-            string key = Service.Instance.Configuration.SpeechSubscription;
-            var speechConfig = SpeechConfig.FromSubscription(key, "eastus");
-            this.Publish("DEBUG", $"Transcribing {callId}");
-            var stopRecognition = new TaskCompletionSource<int>();
-            using (var audioConfig = AudioConfig.FromStreamInput(this.audioInputStream))
-            {
-                using (var recognizer = new SpeechRecognizer(speechConfig, audioConfig))
-                {
-                    recognizer.Recognizing += (s, e) =>
-                    {
-                        this.Publish("RECOGNIZING", e.Result.Text);
-                    };
-
-                    recognizer.Recognized += (s, e) =>
-                    {
-                        this.Publish("RECOGNIZED", e.Result.Text);
-                    };
-
-                    recognizer.Canceled += (s, e) =>
-                    {
-                        this.Publish("CANCELED", e.ToString());
-                        if (e.Reason == CancellationReason.Error)
-                        {
-                            stopRecognition.TrySetResult(0);
-                        }
-                    };
-
-                    recognizer.SessionStarted += (s, e) =>
-                    {
-                        this.Publish("DEBUG", $"started transcription session {e.SessionId} for call {callId}");
-                    };
-
-                    recognizer.SessionStopped += (s, e) =>
-                    {
-                        this.Publish("DEBUG", $"stopped transcription session {e.SessionId} for call {callId}");
-                        stopRecognition.TrySetResult(0);
-                    };
-
-                    this.Publish("DEBUG", $"StartContinuousRecognitionAsync for {callId}");
-                    await recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
-
-                    // Waits for completion.
-                    // Use Task.WaitAny to keep the task rooted.
-                    this.Publish("DEBUG", $"waiting for completion of {callId}");
-                    Task.WaitAny(new[] { stopRecognition.Task });
-
-                    // Stop transcribing the conversation.
-                    this.Publish("DEBUG", $"StopContinuousRecognitionAsync for {callId}");
-                    await recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
-
-                    this.Publish("DEBUG", $"Ended transcription of {callId}");
-                }
-            }
-        }
-
-        /// <summary>Publish a message.</summary>
-        /// <param name="key">The key.</param>
-        /// <param name="value">The value.</param>
-        private void Publish(string key, string value)
-        {
-            Console.WriteLine($"[{key}] {value}");
-            var values = new Dictionary<string, string> { { key, value } };
-            var content = new FormUrlEncodedContent(values);
-            this.httpClient.PostAsync("http://teams.featherinthecap.com/publish", content);
         }
     }
 }
