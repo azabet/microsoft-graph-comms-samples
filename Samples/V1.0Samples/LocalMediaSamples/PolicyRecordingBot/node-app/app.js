@@ -1,17 +1,47 @@
-const Hapi = require('@hapi/hapi');
 const WebSocket = require('ws');
+const Hapi = require('@hapi/hapi');
 
-const wss = new WebSocket.Server({ port: 8080 });
+const useSSL = false;
 
-wss.on('connection', function connection(ws) {
-    ws.on('message', function incoming(message) {
-        console.log('received: %s', message);
+const tls = useSSL && {
+    cert: fs.readFileSync('./cert.pem'),
+    key: fs.readFileSync('./privkey.pem'),
+};
+
+function createWebsocketServer() {
+    let wss;
+    if (useSSL) {
+        const server = https.createServer(tls);
+        wss = new WebSocket.Server({ server });
+        server.listen(8443);
+    } else {
+        wss = new WebSocket.Server({ port: 8080 });
+    }
+    wss.on('connection', function connection(ws) {
+        ws.on('message', function incoming(message) {
+            console.log('received: %s', message);
+        });
+        ws.send('welcome');
     });
-    ws.send('welcome');
-});
+    return wss;
+}
 
-async function init() {
-    const server = Hapi.server({ port: 80, host: '0.0.0.0' });
+const wss = createWebsocketServer();
+
+async function createHapiServer() {
+    let server;
+    if (useSSL) {
+        server = Hapi.server({
+            port: 443,
+            host: '0.0.0.0',
+            tls,
+        });
+    } else {
+        server = Hapi.server({
+            port: 80,
+            host: '0.0.0.0',
+        });
+    }
     await server.register(require('@hapi/inert'));
     server.route({
         method: 'GET',
@@ -36,5 +66,4 @@ async function init() {
     console.log('Server running on %s', server.info.uri);
 }
 
-init();
-
+createHapiServer();

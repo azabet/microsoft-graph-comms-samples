@@ -46,8 +46,6 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
 
         private int recordingStatusIndex = -1;
 
-        private Transcriber transcriber;
-
         /// <summary>
         /// Initializes a new instance of the <see cref="CallHandler"/> class.
         /// </summary>
@@ -58,7 +56,6 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             Publisher.Publish("INFO", $"{statefulCall.Id} > initializing call handler");
             this.Call = statefulCall;
             this.Call.OnUpdated += this.CallOnUpdated;
-            this.transcriber = new Transcriber(this.Call.Id);
 
             // subscribe to dominant speaker event on the audioSocket
             var audioSocket = this.Call.GetLocalMediaSession().AudioSocket;
@@ -68,14 +65,14 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             this.Call.Participants.OnUpdated += this.ParticipantsOnUpdated;
 
             // attach the botMediaStream
-            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.GraphLogger, this.transcriber);
+            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.GraphLogger, this.Call.Participants);
 
             // initialize the timer
             var timer = new Timer(1000 * 60); // every 60 seconds
             timer.AutoReset = true;
             timer.Elapsed += this.OnRecordingStatusFlip;
             this.recordingStatusFlipTimer = timer;
-            Publisher.Publish("INFO", $"{statefulCall.Id} < call handler initialized");
+            Publisher.Publish("INFO", $"{statefulCall.Id} > call handler initialized");
         }
 
         /// <summary>
@@ -97,7 +94,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// <inheritdoc />
         protected override void Dispose(bool disposing)
         {
-            Publisher.Publish("INFO", $"{this.Call.Id} > disposing call handler");
+            Publisher.Publish("INFO", $"{this.Call.Id} < disposing call handler");
             base.Dispose(disposing);
 
             var audioSocket = this.Call.GetLocalMediaSession().AudioSocket;
@@ -113,7 +110,6 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
 
             this.recordingStatusFlipTimer.Enabled = false;
             this.recordingStatusFlipTimer.Elapsed -= this.OnRecordingStatusFlip;
-            this.transcriber.Dispose();
             this.BotMediaStream.Dispose();
             Publisher.Publish("INFO", $"{this.Call.Id} < call handler disposed");
         }
@@ -188,7 +184,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 // todo remove the cast with the new graph implementation,
                 // for now we want the bot to only subscribe to "real" participants
                 var participantDetails = participant.Resource.Info.Identity.User;
-                Publisher.Publish("INFO", $"{this.Call.Id} added participant {participant.Id} {participantDetails?.DisplayName}");
+                Publisher.Publish("INFO", $"{this.Call.Id} * added participant {this.GetAudioSourceID(participant)} {participantDetails?.DisplayName}");
                 Publisher.Publish("DEBUG", $"CallHandler.ParticipantsOnUpdated.AddedResource {JsonConvert.SerializeObject(participant.Resource)}");
 
                 if (participantDetails != null)
@@ -205,7 +201,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             foreach (var participant in args.RemovedResources)
             {
                 var participantDetails = participant.Resource.Info.Identity.User;
-                Publisher.Publish("INFO", $"{this.Call.Id} removed participant {participant.Id} {participantDetails?.DisplayName}");
+                Publisher.Publish("INFO", $"{this.Call.Id} * removed participant {this.GetAudioSourceID(participant)} {participantDetails?.DisplayName}");
                 Publisher.Publish("DEBUG", $"CallHandler.ParticipantsOnUpdated.RemovedResource {JsonConvert.SerializeObject(participant.Resource)}");
                 if (participantDetails != null)
                 {
@@ -223,7 +219,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// <param name="args">Event args containing the old values and the new values.</param>
         private void OnParticipantUpdated(IParticipant sender, ResourceEventArgs<Participant> args)
         {
-            Publisher.Publish("INFO", $"{this.Call.Id} updated participant {sender.Id} {sender?.Resource?.Info?.Identity?.User?.DisplayName}");
+            Publisher.Publish("INFO", $"{this.Call.Id} * updated participant {this.GetAudioSourceID(sender)} {sender?.Resource?.Info?.Identity?.User?.DisplayName}");
             this.SubscribeToParticipantVideo(sender, forceSubscribe: false);
         }
 
@@ -346,7 +342,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             {
                 IParticipant participant = this.GetParticipantFromMSI(e.CurrentDominantSpeaker);
                 var participantDetails = participant?.Resource?.Info?.Identity?.User;
-                Publisher.Publish("INFO", $"{this.Call.Id} dominant speaker changed to {e.CurrentDominantSpeaker} {participantDetails?.DisplayName}");
+                Publisher.Publish("INFO", $"{this.Call.Id} * dominant speaker changed to {e.CurrentDominantSpeaker} {participantDetails?.DisplayName}");
                 if (participantDetails != null)
                 {
                     // we want to force the video subscription on dominant speaker events
@@ -365,6 +361,14 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private IParticipant GetParticipantFromMSI(uint msi)
         {
             return this.Call.Participants.SingleOrDefault(x => x.Resource.IsInLobby == false && x.Resource.MediaStreams.Any(y => y.SourceId == msi.ToString()));
+        }
+
+        /// <summary>Gets the audio source id of the participant.</summary>
+        /// <param name="participant">Participant object.</param>
+        /// <returns>Source ID.</returns>
+        private string GetAudioSourceID(IParticipant participant)
+        {
+            return participant.Resource.MediaStreams.FirstOrDefault(x => x.MediaType.ToString() == "audio")?.SourceId;
         }
     }
 }

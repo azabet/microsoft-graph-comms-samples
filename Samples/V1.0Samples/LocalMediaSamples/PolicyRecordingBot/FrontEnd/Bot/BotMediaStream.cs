@@ -11,9 +11,11 @@
 namespace Sample.PolicyRecordingBot.FrontEnd.Bot
 {
     using System;
+    using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Linq;
     using System.Runtime.InteropServices;
+    using Microsoft.Graph.Communications.Calls;
     using Microsoft.Graph.Communications.Calls.Media;
     using Microsoft.Graph.Communications.Common;
     using Microsoft.Graph.Communications.Common.Telemetry;
@@ -29,25 +31,28 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private readonly IVideoSocket vbssSocket;
         private readonly List<IVideoSocket> videoSockets;
         private readonly ILocalMediaSession mediaSession;
-        private Transcriber transcriber;
+        private readonly IParticipantCollection participants;
+        private ConcurrentDictionary<int, Transcriber> transcribers = new ConcurrentDictionary<int, Transcriber>();
+
+        // private readonly Transcriber transcriber;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream"/> class.
         /// </summary>
         /// <param name="mediaSession">The media session.</param>
         /// <param name="logger">Graph logger.</param>
-        /// <param name="transcriber">Transcriber instance for this call.</param>
+        /// <param name="participants">Call participants.</param>
         /// <exception cref="InvalidOperationException">Throws when no audio socket is passed in.</exception>
-        public BotMediaStream(ILocalMediaSession mediaSession, IGraphLogger logger, Transcriber transcriber)
+        public BotMediaStream(ILocalMediaSession mediaSession, IGraphLogger logger, IParticipantCollection participants)
             : base(logger)
         {
-            Publisher.Publish("INFO", $"{mediaSession.MediaSessionId} >>> initializing media stream bot");
+            Publisher.Publish("INFO", $"{mediaSession.MediaSessionId} >> initializing media stream bot");
             Publisher.Publish("DEBUG", mediaSession.GetMediaConfiguration().ToString());
             ArgumentVerifier.ThrowOnNullArgument(mediaSession, nameof(mediaSession));
             ArgumentVerifier.ThrowOnNullArgument(logger, nameof(logger));
 
             this.mediaSession = mediaSession;
-            this.transcriber = transcriber;
+            this.participants = participants;
 
             // Subscribe to the audio media.
             this.audioSocket = mediaSession.AudioSocket;
@@ -72,8 +77,20 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 this.mediaSession.VbssSocket.VideoMediaReceived += this.OnVbssMediaReceived;
             }
 
-            _ = transcriber.StartTranscriptionAsync();
-            Publisher.Publish("INFO", $"{mediaSession.MediaSessionId} <<< media stream bot initialized");
+            // Initialize transcribers for the unmixed audio channels
+            for (var i = 0; i < 4; i++)
+            {
+                try
+                {
+                    this.transcribers[i] = new Transcriber($"{mediaSession.MediaSessionId}-{i}");
+                }
+                catch
+                {
+                    this.transcribers[i] = null;
+                }
+            }
+
+            Publisher.Publish("INFO", $"{mediaSession.MediaSessionId} >> media stream bot initialized");
         }
 
         /// <summary>
@@ -150,7 +167,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// <inheritdoc/>
         protected override void Dispose(bool disposing)
         {
-            Publisher.Publish("INFO", $"{this.mediaSession.MediaSessionId} >>> disposing media stream bot");
+            Publisher.Publish("INFO", $"{this.mediaSession.MediaSessionId} << disposing media stream bot");
             base.Dispose(disposing);
 
             this.audioSocket.AudioMediaReceived -= this.OnAudioMediaReceived;
@@ -166,7 +183,8 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 this.mediaSession.VbssSocket.VideoMediaReceived -= this.OnVbssMediaReceived;
             }
 
-            Publisher.Publish("INFO", $"{this.mediaSession.MediaSessionId} <<< media stream bot disposed");
+            this.transcribers.ForEach(t => t.Value.Dispose());
+            Publisher.Publish("INFO", $"{this.mediaSession.MediaSessionId} << media stream bot disposed");
         }
 
         /// <summary>
@@ -192,12 +210,35 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// </param>
         private void OnAudioMediaReceived(object sender, AudioMediaReceivedEventArgs e)
         {
-            // Publisher.Publish("DEBUG", $"Received audio {e.Buffer.AudioFormat}, Length={e.Buffer.Length}, IsSilence={e.Buffer.IsSilence}");
+            Publisher.Publish("DEBUG", $"Received audio {e.Buffer.AudioFormat}, Length={e.Buffer.Length}, IsSilence={e.Buffer.IsSilence}, UnmixedBuffers={e.Buffer.UnmixedAudioBuffers?.Length}");
             try
             {
+                /*
+                // Transcribe mixed audio
                 byte[] buffer = new byte[e.Buffer.Length];
                 Marshal.Copy(e.Buffer.Data, buffer, 0, (int)e.Buffer.Length);
                 this.transcriber.PushAudio(buffer);
+                */
+
+                // Transcribe unmixed audio
+                if (e.Buffer.UnmixedAudioBuffers != null)
+                {
+                    for (int i = 0; i < e.Buffer.UnmixedAudioBuffers.Length; i++)
+                    {
+                        if (this.transcribers[i] == null)
+                        {
+                            continue;
+                        }
+
+                        var b = e.Buffer.UnmixedAudioBuffers[i];
+                        var speaker = this.GetParticipantFromMSI(b.ActiveSpeakerId);
+                        var speakerName = speaker?.Resource?.Info?.Identity?.User?.DisplayName;
+                        Publisher.Publish("DEBUG", $"Sending unmixed audio {i} to transcriber, Length={b.Length}, Speaker={b.ActiveSpeakerId} {speakerName}");
+                        byte[] buffer = new byte[b.Length];
+                        Marshal.Copy(b.Data, buffer, 0, (int)b.Length);
+                        this.transcribers[i].PushAudio(speakerName, buffer);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -207,6 +248,18 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             {
                 e.Buffer.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Gets the participant with the corresponding MSI.
+        /// </summary>
+        /// <param name="msi">media stream id.</param>
+        /// <returns>
+        /// The <see cref="IParticipant"/>.
+        /// </returns>
+        private IParticipant GetParticipantFromMSI(uint msi)
+        {
+            return this.participants.SingleOrDefault(x => x.Resource.IsInLobby == false && x.Resource.MediaStreams.Any(y => y.SourceId == msi.ToString()));
         }
 
         /// <summary>

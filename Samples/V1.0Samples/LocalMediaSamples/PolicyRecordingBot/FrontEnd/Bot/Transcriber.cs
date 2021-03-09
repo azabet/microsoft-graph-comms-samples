@@ -18,30 +18,31 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private PushAudioInputStream audioInputStream;
         private AudioConfig audioConfig;
         private SpeechRecognizer recognizer;
-        private string callId;
+        private string id;
+        private string speakerName;
         private TaskCompletionSource<int> stopRecognition;
 
         /// <summary>Initializes a new instance of the <see cref="Transcriber"/> class.</summary>
-        /// <param name="callId">Call ID.</param>
-        public Transcriber(string callId)
+        /// <param name="id">ID to be used for logging.</param>
+        public Transcriber(string id)
         {
-            Publisher.Publish("INFO", $"{callId} >> initializing transcriber");
-            this.callId = callId;
+            Publisher.Publish("INFO", $"{id} >>> initializing transcriber");
+            this.id = id;
             this.audioInputStream = AudioInputStream.CreatePushStream();
             this.audioConfig = AudioConfig.FromStreamInput(this.audioInputStream);
             this.recognizer = new SpeechRecognizer(speechConfig, this.audioConfig);
             this.stopRecognition = new TaskCompletionSource<int>();
             this.recognizer.Recognizing += (s, e) =>
             {
-                Publisher.Publish("RECOGNIZING", e.Result.Text);
+                Publisher.Publish("RECOGNIZING", $"{this.speakerName}: {e.Result.Text}");
             };
             this.recognizer.Recognized += (s, e) =>
             {
-                Publisher.Publish("RECOGNIZED", e.Result.Text);
+                Publisher.Publish("RECOGNIZED", $"{this.speakerName}: {e.Result.Text}");
             };
             this.recognizer.Canceled += (s, e) =>
             {
-                Publisher.Publish("CANCELED", e.ToString());
+                Publisher.Publish("INFO", $"{id} *** cancelled transcription  {e}");
                 if (e.Reason == CancellationReason.Error)
                 {
                     this.stopRecognition.TrySetResult(0);
@@ -49,55 +50,50 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             };
             this.recognizer.SessionStarted += (s, e) =>
             {
-                Publisher.Publish("INFO", $"{callId} transcription session {e.SessionId} started");
+                Publisher.Publish("INFO", $"{id} *** started transcription session {e.SessionId}");
             };
             this.recognizer.SessionStopped += (s, e) =>
             {
-                Publisher.Publish("INFO", $"{callId} transcription session {e.SessionId} stopped");
+                Publisher.Publish("INFO", $"{id} *** stopped transcription session {e.SessionId}");
                 this.stopRecognition.TrySetResult(0);
             };
-            Publisher.Publish("INFO", $"{callId} << transcriber initialized");
+            var success = this.recognizer.StartContinuousRecognitionAsync().Wait(5000);
+            if (success)
+            {
+                Publisher.Publish("INFO", $"{id} >>> transcriber initialized");
+            }
+            else
+            {
+                Publisher.Publish("ERROR", $"{id} >>> transcriber timed out");
+                throw new TimeoutException();
+            }
         }
 
-        /// <summary>Start continuous transcription.</summary>
-        /// <returns>Awaitable task.</returns>
-        public async Task StartTranscriptionAsync()
-        {
-            await this.recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
-            Publisher.Publish("INFO", $"{this.callId} transcription service started");
-
-            // Waits for completion.
-            // Use Task.WaitAny to keep the task rooted.
-            Task.WaitAny(new[] { this.stopRecognition.Task });
-            Publisher.Publish("INFO", $"{this.callId} transcription ended");
-
-            await this.recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
-            Publisher.Publish("INFO", $"{this.callId} transcription service stopped");
-        }
-
-        /// <summary>Stop continuous transcription.</summary>
+        /// <summary>Dispose the transcriber.</summary>
         public void Dispose()
         {
-            Publisher.Publish("INFO", $"{this.callId} >> disposing transcriber");
+            Publisher.Publish("INFO", $"{this.id} <<< disposing transcriber");
             try
             {
                 this.stopRecognition.TrySetResult(0);
-                /* this.recognizer.Dispose(); */
                 this.audioConfig.Dispose();
                 this.audioInputStream.Close();
                 this.audioInputStream.Dispose();
-                Publisher.Publish("INFO", $"{this.callId} << transcriber disposed");
+                this.recognizer.Dispose();
+                Publisher.Publish("INFO", $"{this.id} <<< transcriber disposed");
             }
             catch (Exception ex)
             {
-                Publisher.Publish("ERROR", $"{this.callId} error in disposing the transcriber {ex}");
+                Publisher.Publish("ERROR", $"{this.id} error in disposing the transcriber {ex}");
             }
         }
 
         /// <summary>Push audio.</summary>
+        /// <param name="speakerName">Name.</param>
         /// <param name="buffer">Byte array.</param>
-        public void PushAudio(byte[] buffer)
+        public void PushAudio(string speakerName, byte[] buffer)
         {
+            this.speakerName = speakerName;
             this.audioInputStream.Write(buffer);
         }
     }

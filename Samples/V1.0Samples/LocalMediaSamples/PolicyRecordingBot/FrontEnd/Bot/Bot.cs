@@ -112,7 +112,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// </returns>
         internal async Task EndCallByCallLegIdAsync(string callLegId)
         {
-            Publisher.Publish("INFO", $"{callLegId} requesting call to be ended");
+            Publisher.Publish("INFO", $"{callLegId} ending the call");
             try
             {
                 await this.GetHandlerOrThrow(callLegId).Call.DeleteAsync().ConfigureAwait(false);
@@ -166,6 +166,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 {
                     StreamDirections = StreamDirection.Recvonly,
                     SupportedAudioFormat = AudioFormat.Pcm16K,
+                    ReceiveUnmixedMeetingAudio = true,
                 },
                 videoSocketSettings,
                 vbssSocketSettings,
@@ -236,7 +237,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         {
             foreach (var call in args.AddedResources)
             {
-                Publisher.Publish("INFO", $"{call.Id} adding call");
+                Publisher.Publish("INFO", $"{call.Id} updating call");
                 Publisher.Publish("DEBUG", $"Bot.CallsOnUpdated.AddedResource {this.JsonifyCall(call)}");
                 var callHandler = new CallHandler(call);
                 this.CallHandlers[call.Id] = callHandler;
@@ -280,10 +281,18 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         /// <returns>string.</returns>
         private string JsonifyCall(ICall call)
         {
-            var resource = JsonConvert.SerializeObject(call.Resource);
-            var participants = JsonConvert.SerializeObject(call.Participants);
-            var mediaSession = JsonConvert.SerializeObject(call.MediaSession);
-            return $"Resource={resource}, Participants={participants}, MediaSession={mediaSession}";
+            string s = string.Empty;
+            try
+            {
+                s += $"Resource={JsonConvert.SerializeObject(call.Resource)}";
+                s += $", MediaSession={JsonConvert.SerializeObject(call.MediaSession)}";
+                s += $", Participants={JsonConvert.SerializeObject(call.Participants)}";
+            }
+            catch
+            {
+            }
+
+            return s;
         }
     }
 }

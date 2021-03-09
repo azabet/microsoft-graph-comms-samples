@@ -9,6 +9,12 @@
             margin-bottom: 5px;
             margin-top: 10px;
         }
+        label {
+            margin-left: 10px;
+        }
+        input[type=checkbox] {
+            margin: 2px;
+        }
         .container {
             border: solid grey 1px;
             border-radius: 5px;
@@ -19,21 +25,44 @@
         #logs.hideDebug > .DEBUG {
             display: none;
         }
+        #logs.hideInfo > .INFO {
+            display: none;
+        }
+        #logs.hideError > .ERROR {
+            display: none;
+        }
+        .DEBUG {
+            background: gainsboro;
+            margin: 2px;
+        }
+        .INFO {
+            color: blue;
+            background: lavender;
+            margin: 2px;
+        }
+        .ERROR {
+            color: red;
+            background: lavenderblush;
+            margin: 2px;
+        }
     </style>
 </head>
 
 <body>
     <div>
         Status: <span id="status">disconnected</span>
-        <button onclick="test()" style="display: none">test</button>
+        <button onclick="test()" style="display: non">test</button>
     </div>
-    <div>
+    <div style="display: flex">
         <h4 style="display: inline-block">Logs</h4>
-        <label>level</label>
-        <select onchange="setLogLevel(this)">
-            <option value="INFO" selected>info</option>
-            <option value="DEBUG">debug</option>
-        </select>
+        <div style="margin-left: auto; display: flex; align-items: center">
+            <label>Debug</label>
+            <input type="checkbox" onchange="setLogLevel('Debug', this.checked)"/>
+            <label>Info</label>
+            <input type="checkbox" checked onchange="setLogLevel('Info', this.checked)" />
+            <label>Error</label>
+            <input type="checkbox" checked onchange="setLogLevel('Error', this.checked)" />
+        </div>
     </div>
     <div id="logs" class="container hideDebug" style="height: 200px"></div>
     <h4>Messages</h4>
@@ -48,13 +77,9 @@
         const interim = document.getElementById("interim");
         const status = document.getElementById("status");
 
-        function setLogLevel(e) {
-            const { value } = e;
-            if (value === 'DEBUG') {
-                logs.classList.remove('hideDebug');
-            } else {
-                logs.classList.add('hideDebug');
-            }
+        function setLogLevel(level, checked) {
+            const cls = `hide${level}`;
+            checked ? logs.classList.remove(cls) : logs.classList.add(cls);
         }
 
         function showStatus(x) {
@@ -68,12 +93,12 @@
             } else if (k === "RECOGNIZED") {
                 const e = document.createElement("div");
                 e.className = k;
-                e.innerHTML = `${now}: ${v}`;
+                e.innerHTML = `${now} ${v}`;
                 messages.appendChild(e);
             } else {
                 const e = document.createElement("div");
                 e.className = k;
-                e.innerHTML = `${now}: [${k}] ${v}`;;
+                e.innerHTML = `${now} [${k}] ${v}`;;
                 logs.appendChild(e);
             }
         };
@@ -96,10 +121,18 @@
         }
 
         async function test() {
-            const wait = 200;
+            const wait = 100;
             post({ "INFO": "new session started" });
             await sleep(wait);
+            post({ "INFO": "added participant 1" });
+            await sleep(wait);
             post({ "DEBUG": "received audio" });
+            await sleep(wait);
+            post({ "DEBUG": "participant info {\"displayName\": \"Test User\"}" });
+            await sleep(wait);
+            post({ "ERROR": "error in sending audio" });
+            await sleep(wait);
+            post({ "ERROR": "error in sending audio" });
             await sleep(wait);
             post({ "RECOGNIZING": "hello" });
             await sleep(wait);
