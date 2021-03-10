@@ -216,7 +216,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 Marshal.Copy(e.Buffer.Data, this.silence, 0, (int)e.Buffer.Length);
             }
 
-            var channels = new List<int>() { 0, 1, 2, 3 };
+            var availableChannels = new List<int>() { 0, 1, 2, 3 };
 
             try
             {
@@ -235,17 +235,27 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                         var b = e.Buffer.UnmixedAudioBuffers[i];
                         var speaker = this.GetParticipantFromMSI(b.ActiveSpeakerId);
                         var speakerName = speaker?.Resource?.Info?.Identity?.User?.DisplayName;
+
+                        // Find the transcriber associated with the speaker
                         var transcriber = this.transcribers.FirstOrDefault(x => x.Value.GetSpeaker() == speakerName);
+
+                        // If not found, pick the first available transcriber
                         if (transcriber.Value == null)
                         {
-                            transcriber = this.transcribers.First(x => x.Value.GetSpeaker() == null);
+                            transcriber = this.transcribers.FirstOrDefault(x => x.Value.GetSpeaker() == null);
+                        }
+
+                        // Otherwise, pick the last transcriber
+                        if (transcriber.Value == null)
+                        {
+                            transcriber = this.transcribers.Single(x => x.Key == 3);
                         }
 
                         Publisher.Publish("DEBUG", $"Sending unmixed audio {i} to transcriber {transcriber.Key}, Length={b.Length}, Speaker={b.ActiveSpeakerId} {speakerName}");
                         byte[] buffer = new byte[b.Length];
                         Marshal.Copy(b.Data, buffer, 0, (int)b.Length);
                         transcriber.Value.PushAudio(speakerName, buffer);
-                        channels.Remove(transcriber.Key);
+                        availableChannels.Remove(transcriber.Key);
                     }
                 }
             }
@@ -255,11 +265,8 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             }
             finally
             {
-                channels.ForEach(i =>
-                {
-                    Publisher.Publish("DEBUG", $"Sending silence to transcriber {i}");
-                    this.transcribers[i].PushAudio(null, this.silence);
-                });
+                Publisher.Publish("DEBUG", $"Sending silence to transcribers [{string.Join(", ", availableChannels)}]");
+                availableChannels.ForEach(i => this.transcribers[i].PushAudio(this.transcribers[i].GetSpeaker(), this.silence));
                 e.Buffer.Dispose();
             }
         }
