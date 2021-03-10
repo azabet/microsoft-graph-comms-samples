@@ -33,8 +33,7 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private readonly ILocalMediaSession mediaSession;
         private readonly IParticipantCollection participants;
         private ConcurrentDictionary<int, Transcriber> transcribers = new ConcurrentDictionary<int, Transcriber>();
-
-        // private readonly Transcriber transcriber;
+        private byte[] silence = null;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream"/> class.
@@ -211,6 +210,14 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private void OnAudioMediaReceived(object sender, AudioMediaReceivedEventArgs e)
         {
             Publisher.Publish("DEBUG", $"Received audio {e.Buffer.AudioFormat}, Length={e.Buffer.Length}, IsSilence={e.Buffer.IsSilence}, UnmixedBuffers={e.Buffer.UnmixedAudioBuffers?.Length}");
+            if (e.Buffer.IsSilence && this.silence == null)
+            {
+                this.silence = new byte[e.Buffer.Length];
+                Marshal.Copy(e.Buffer.Data, this.silence, 0, (int)e.Buffer.Length);
+            }
+
+            var channels = new List<int>() { 0, 1, 2, 3 };
+
             try
             {
                 /*
@@ -225,18 +232,20 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
                 {
                     for (int i = 0; i < e.Buffer.UnmixedAudioBuffers.Length; i++)
                     {
-                        if (this.transcribers[i] == null)
-                        {
-                            continue;
-                        }
-
                         var b = e.Buffer.UnmixedAudioBuffers[i];
                         var speaker = this.GetParticipantFromMSI(b.ActiveSpeakerId);
                         var speakerName = speaker?.Resource?.Info?.Identity?.User?.DisplayName;
-                        Publisher.Publish("DEBUG", $"Sending unmixed audio {i} to transcriber, Length={b.Length}, Speaker={b.ActiveSpeakerId} {speakerName}");
+                        var transcriber = this.transcribers.FirstOrDefault(x => x.Value.GetSpeaker() == speakerName);
+                        if (transcriber.Value == null)
+                        {
+                            transcriber = this.transcribers.First(x => x.Value.GetSpeaker() == null);
+                        }
+
+                        Publisher.Publish("DEBUG", $"Sending unmixed audio {i} to transcriber {transcriber.Key}, Length={b.Length}, Speaker={b.ActiveSpeakerId} {speakerName}");
                         byte[] buffer = new byte[b.Length];
                         Marshal.Copy(b.Data, buffer, 0, (int)b.Length);
-                        this.transcribers[i].PushAudio(speakerName, buffer);
+                        transcriber.Value.PushAudio(speakerName, buffer);
+                        channels.Remove(transcriber.Key);
                     }
                 }
             }
@@ -246,6 +255,11 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             }
             finally
             {
+                channels.ForEach(i =>
+                {
+                    Publisher.Publish("DEBUG", $"Sending silence to transcriber {i}");
+                    this.transcribers[i].PushAudio(null, this.silence);
+                });
                 e.Buffer.Dispose();
             }
         }

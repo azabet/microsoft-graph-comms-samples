@@ -18,9 +18,9 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         private PushAudioInputStream audioInputStream;
         private AudioConfig audioConfig;
         private SpeechRecognizer recognizer;
-        private string id;
-        private string speakerName;
         private TaskCompletionSource<int> stopRecognition;
+        private string id;
+        private string speaker = null;
 
         /// <summary>Initializes a new instance of the <see cref="Transcriber"/> class.</summary>
         /// <param name="id">ID to be used for logging.</param>
@@ -34,11 +34,12 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
             this.stopRecognition = new TaskCompletionSource<int>();
             this.recognizer.Recognizing += (s, e) =>
             {
-                Publisher.Publish("RECOGNIZING", $"{this.speakerName}: {e.Result.Text}");
+                Publisher.Publish("RECOGNIZING", $"[{this.speaker}] {e.Result.Text}");
             };
             this.recognizer.Recognized += (s, e) =>
             {
-                Publisher.Publish("RECOGNIZED", $"{this.speakerName}: {e.Result.Text}");
+                Publisher.Publish("RECOGNIZED", $"[{this.speaker}] {e.Result.Text}");
+                this.speaker = null;
             };
             this.recognizer.Canceled += (s, e) =>
             {
@@ -89,12 +90,19 @@ namespace Sample.PolicyRecordingBot.FrontEnd.Bot
         }
 
         /// <summary>Push audio.</summary>
-        /// <param name="speakerName">Name.</param>
+        /// <param name="speaker">Speaker.</param>
         /// <param name="buffer">Byte array.</param>
-        public void PushAudio(string speakerName, byte[] buffer)
+        public void PushAudio(string speaker, byte[] buffer)
         {
-            this.speakerName = speakerName;
+            this.speaker = speaker;
             this.audioInputStream.Write(buffer);
+        }
+
+        /// <summary>Get the speaker whose audio is currenlty being transcribed.</summary>
+        /// <returns>Speaker.</returns>
+        public string GetSpeaker()
+        {
+            return this.speaker;
         }
     }
 }
