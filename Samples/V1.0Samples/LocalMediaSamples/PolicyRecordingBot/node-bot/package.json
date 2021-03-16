@@ -1,0 +1,16 @@
+{
+  "name": "node-bot",
+  "version": "0.0.0",
+  "description": "node-bot",
+  "main": "server.js",
+  "author": {
+    "name": ""
+  },
+  "dependencies": {
+    "@azure/msal-node": "^1.0.1",
+    "@hapi/hapi": "^20.1.0",
+    "@microsoft/microsoft-graph-client": "^2.2.1",
+    "axios": "^0.21.1",
+    "isomorphic-fetch": "^3.0.0"
+  }
+}
