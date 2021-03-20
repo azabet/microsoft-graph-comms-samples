@@ -2,8 +2,8 @@ const msal = require('@azure/msal-node');
 require('isomorphic-fetch');
 const { Client, ImplicitMSALAuthenticationProvider, MSALAuthenticationProviderOptions } = require("@microsoft/microsoft-graph-client");
 
-const OAUTH_APP_ID = '2824a597-6cc3-4f6a-a433-71a977609b7';
-const OAUTH_APP_SECRET = '1Pd___C~hey4wI3Fu29F2N._Yiv5l4JrJx';
+const OAUTH_APP_ID = '';
+const OAUTH_APP_SECRET = '';
 const OAUTH_SCOPES = 'user.read,calendars.readwrite,mailboxsettings.read,Calls.AccessMedia.All,Calls.JoinGroupCall.All';
 
 const msalConfig = {
